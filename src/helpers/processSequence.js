@@ -14,38 +14,94 @@
  * Иногда промисы от API будут приходить в состояние rejected, (прямо как и API в реальной жизни)
  * Ответ будет приходить в поле {result}
  */
- import Api from '../tools/api';
+import { tryCatch } from "ramda";
+import Api from "../tools/api";
 
- const api = new Api();
+const api = new Api();
 
- /**
-  * Я – пример, удали меня
-  */
- const wait = time => new Promise(resolve => {
-     setTimeout(resolve, time);
- })
+const pipeAsync =
+    (...fns) =>
+    (arg) =>
+        fns.reduce(
+            (p, f) =>
+                p.then(f).catch((err) => {
+                    throw err;
+                }),
+            Promise.resolve(arg)
+        );
 
- const processSequence = ({value, writeLog, handleSuccess, handleError}) => {
-     /**
-      * Я – пример, удали меня
-      */
-     writeLog(value);
+const validate = (value) => {
+    if (
+        value.length < 10 &&
+        value.length > 2 &&
+        /[+-]?\d+(\.\d*)?/.test(value) &&
+        !value.startsWith("-")
+    ) {
+        return value;
+    }
+    throw new Error("ValidationError");
+};
 
-     api.get('https://api.tech/numbers/base', {from: 2, to: 10, number: '01011010101'}).then(({result}) => {
-         writeLog(result);
-     });
+const round = (value) => {
+    return Math.round(Number(value));
+};
 
-     wait(2500).then(() => {
-         writeLog('SecondLog')
+const getConverted = (value) => {
+    return api
+        .get("https://api.tech/numbers/base", {
+            from: 10,
+            to: 2,
+            number: value,
+        })
+        .then(({ result }) => result);
+};
 
-         return wait(1500);
-     }).then(() => {
-         writeLog('ThirdLog');
+const getLength = (value) => {
+    return String(value).length;
+};
 
-         return wait(400);
-     }).then(() => {
-         handleSuccess('Done');
-     });
- }
+const getSquare = (value) => {
+    return value * value;
+};
+
+const getModuleThree = (value) => {
+    return value % 3;
+};
+
+const getAnimal = (value) => {
+    return api
+        .get(`https://animals.tech/${value}`, {})
+        .then(({ result }) => result);
+};
+
+const processSequence = ({ value, writeLog, handleSuccess, handleError }) => {
+    const log = (value) => {
+        writeLog(value);
+        return value;
+    };
+
+    const catcher = (err, value) => {
+        console.log(err);
+        handleError(err.message);
+        // return value;
+    };
+
+    pipeAsync(
+        log,
+        tryCatch(validate, catcher),
+        round,
+        log,
+        tryCatch(getConverted, catcher),
+        log,
+        getLength,
+        log,
+        getSquare,
+        log,
+        getModuleThree,
+        log,
+        tryCatch(getAnimal, catcher),
+        handleSuccess
+    )(value);
+};
 
 export default processSequence;
