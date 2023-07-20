@@ -14,32 +14,23 @@
  * Иногда промисы от API будут приходить в состояние rejected, (прямо как и API в реальной жизни)
  * Ответ будет приходить в поле {result}
  */
-import { tryCatch } from "ramda";
+import { pipe, andThen, otherwise } from "ramda";
 import Api from "../tools/api";
 
 const api = new Api();
 
-const pipeAsync =
-    (...fns) =>
-    (arg) =>
-        fns.reduce(
-            (p, f) =>
-                p.then(f).catch((err) => {
-                    throw err;
-                }),
-            Promise.resolve(arg)
-        );
-
 const validate = (value) => {
-    if (
-        value.length < 10 &&
-        value.length > 2 &&
-        /[+-]?\d+(\.\d*)?/.test(value) &&
-        !value.startsWith("-")
-    ) {
-        return value;
-    }
-    throw new Error("ValidationError");
+    return new Promise((resolve, reject) => {
+        if (
+            value.length < 10 &&
+            value.length > 2 &&
+            /^[+-]?\d+(\.\d*)?$/.test(value) &&
+            !value.startsWith("-")
+        ) {
+            resolve(value);
+        }
+        reject("ValidationError");
+    });
 };
 
 const round = (value) => {
@@ -81,17 +72,10 @@ const processSequence = ({ value, writeLog, handleSuccess, handleError }) => {
     };
 
     const catcher = (err, value) => {
-        console.log(err);
-        handleError(err.message);
-        // return value;
+        handleError(err);
     };
 
-    pipeAsync(
-        log,
-        tryCatch(validate, catcher),
-        round,
-        log,
-        tryCatch(getConverted, catcher),
+    const convertedPipe = pipe(
         log,
         getLength,
         log,
@@ -99,9 +83,20 @@ const processSequence = ({ value, writeLog, handleSuccess, handleError }) => {
         log,
         getModuleThree,
         log,
-        tryCatch(getAnimal, catcher),
-        handleSuccess
-    )(value);
+        getAnimal,
+        andThen(handleSuccess),
+        otherwise(catcher)
+    );
+
+    const validatedPipe = pipe(
+        round,
+        log,
+        getConverted,
+        andThen(convertedPipe),
+        otherwise(catcher)
+    );
+
+    pipe(log, validate, andThen(validatedPipe), otherwise(catcher))(value);
 };
 
 export default processSequence;
